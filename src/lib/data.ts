@@ -372,7 +372,6 @@ export async function ensureSeeded() {
         projectsCount: 12,
       });
     } else {
-      // backfill newly added columns for deployed databases
       const row = existing[0];
       const patch: Record<string, string> = {};
       const back = (key: keyof typeof row, value: string) => {
@@ -407,7 +406,7 @@ export async function ensureSeeded() {
       await db.insert(settings).values({
         siteTitle: "Nitesh Kuamr — Video Editor & Motion Graphic Designer",
         siteDescription:
-          "Portfolio of Nitesh Kuamr, a video editor and motion graphic designer from Delhi, India. Long-form storytelling, short-form content, motion graphics and creative editing.",
+          "Portfolio of Nitesh Kuamr, a video editor and motion graphic designer from Delhi, India.",
       });
     }
     const existingProjects = await db
@@ -441,61 +440,128 @@ export async function ensureSeeded() {
   }
 }
 
+// ----------------------------------------------------------------------
+// ERROR HANDLING APPLIED BELOW: Fallback to Seed data if DB fails
+// ----------------------------------------------------------------------
+
 export async function getProfile(): Promise<Profile | null> {
-  await ensureSeeded();
-  const rows = await db.select().from(profile).limit(1);
-  return rows[0] ?? null;
+  try {
+    await ensureSeeded();
+    const rows = await db.select().from(profile).limit(1);
+    return rows[0] ?? null;
+  } catch (error) {
+    console.error("Database unavailable, falling back to static Profile.");
+    // Fallback static profile
+    return {
+      id: 1,
+      name: "NITESH KUAMR",
+      professionalTitle: "VIDEO EDITOR · MOTION GRAPHIC DESIGNER",
+      location: "Delhi, India",
+      email: "niteshedits2002@gmail.com",
+      phone: "+91 93158 41623",
+      whatsapp: "919315841623",
+      instagramHandle: "@framesbyniteshh",
+      instagramUrl: "https://www.instagram.com/framesbyniteshh/",
+      heroEyebrow: DEFAULTS.heroEyebrow,
+      heroHeading: DEFAULTS.heroHeading,
+      heroDescription: DEFAULT_HERO_DESCRIPTION,
+      heroPrimaryBtn: DEFAULTS.heroPrimaryBtn,
+      heroSecondaryBtn: DEFAULTS.heroSecondaryBtn,
+      portraitUrl: "/images/portrait.webp",
+      aboutHeading: DEFAULT_ABOUT_HEADING,
+      aboutText: DEFAULT_ABOUT_TEXT,
+      aboutExtra: DEFAULTS.aboutExtra,
+      contactHeading: DEFAULTS.contactHeading,
+      contactSubheading: DEFAULTS.contactSubheading,
+      contactIntro: DEFAULTS.contactIntro,
+      footerName: DEFAULTS.footerName,
+      copyrightText: DEFAULTS.copyrightText,
+      projectsCount: 12,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Profile;
+  }
 }
 
 export async function getPublishedProjects(): Promise<Project[]> {
-  await ensureSeeded();
-  return db
-    .select()
-    .from(projects)
-    .where(
-      and(
-        eq(projects.status, "published"),
-        eq(projects.privacy, "public"),
-        isNull(projects.deletedAt),
-      ),
-    )
-    .orderBy(asc(projects.displayOrder), asc(projects.id));
+  try {
+    await ensureSeeded();
+    return await db
+      .select()
+      .from(projects)
+      .where(
+        and(
+          eq(projects.status, "published"),
+          eq(projects.privacy, "public"),
+          isNull(projects.deletedAt),
+        ),
+      )
+      .orderBy(asc(projects.displayOrder), asc(projects.id));
+  } catch (error) {
+    console.error("Database unavailable, falling back to static Projects.");
+    // Fallback returning SEED_PROJECTS
+    return SEED_PROJECTS.map((p, idx) => ({
+      ...p,
+      id: idx + 1,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })) as Project[];
+  }
 }
 
-/** Published OR unlisted — used for direct /work/[slug] access. */
 export async function getProjectBySlug(slug: string): Promise<Project | null> {
-  await ensureSeeded();
-  const rows = await db
-    .select()
-    .from(projects)
-    .where(
-      and(
-        eq(projects.slug, slug),
-        eq(projects.status, "published"),
-        isNull(projects.deletedAt),
-      ),
-    )
-    .limit(1);
-  const p = rows[0];
-  if (!p || p.privacy === "private") return null;
-  return p;
+  try {
+    await ensureSeeded();
+    const rows = await db
+      .select()
+      .from(projects)
+      .where(
+        and(
+          eq(projects.slug, slug),
+          eq(projects.status, "published"),
+          isNull(projects.deletedAt),
+        ),
+      )
+      .limit(1);
+    const p = rows[0];
+    if (!p || p.privacy === "private") return null;
+    return p;
+  } catch (error) {
+    console.error("Database unavailable, falling back to static Project By Slug.");
+    const found = SEED_PROJECTS.find(p => p.slug === slug);
+    if (!found) return null;
+    return { ...found, id: 99, createdAt: new Date(), updatedAt: new Date() } as Project;
+  }
 }
 
 export async function getAllProjects(): Promise<Project[]> {
-  await ensureSeeded();
-  return db
-    .select()
-    .from(projects)
-    .where(isNull(projects.deletedAt))
-    .orderBy(asc(projects.category), asc(projects.displayOrder), asc(projects.id));
+  try {
+    await ensureSeeded();
+    return await db
+      .select()
+      .from(projects)
+      .where(isNull(projects.deletedAt))
+      .orderBy(asc(projects.category), asc(projects.displayOrder), asc(projects.id));
+  } catch (error) {
+    return SEED_PROJECTS.map((p, idx) => ({
+      ...p,
+      id: idx + 1,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })) as Project[];
+  }
 }
 
 export async function getProjectMedia(projectId: number): Promise<ProjectMedia[]> {
-  return db
-    .select()
-    .from(projectMedia)
-    .where(eq(projectMedia.projectId, projectId))
-    .orderBy(asc(projectMedia.displayOrder), asc(projectMedia.id));
+  try {
+    return await db
+      .select()
+      .from(projectMedia)
+      .where(eq(projectMedia.projectId, projectId))
+      .orderBy(asc(projectMedia.displayOrder), asc(projectMedia.id));
+  } catch (error) {
+    return []; // Return empty array if DB fails
+  }
 }
 
 export function serializeMediaItem(m: ProjectMedia) {
@@ -611,20 +677,39 @@ export function serializeProfile(p: Profile) {
 export type ProfileDTO = ReturnType<typeof serializeProfile>;
 
 export async function getEnabledServices(): Promise<Service[]> {
-  await ensureSeeded();
-  return db
-    .select()
-    .from(services)
-    .where(eq(services.enabled, true))
-    .orderBy(asc(services.displayOrder), asc(services.id));
+  try {
+    await ensureSeeded();
+    return await db
+      .select()
+      .from(services)
+      .where(eq(services.enabled, true))
+      .orderBy(asc(services.displayOrder), asc(services.id));
+  } catch (error) {
+    console.error("Database unavailable, falling back to static Services.");
+    return SEED_SERVICES.map((s, idx) => ({
+      ...s,
+      id: idx + 1,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })) as Service[];
+  }
 }
 
 export async function getAllServices(): Promise<Service[]> {
-  await ensureSeeded();
-  return db
-    .select()
-    .from(services)
-    .orderBy(asc(services.displayOrder), asc(services.id));
+  try {
+    await ensureSeeded();
+    return await db
+      .select()
+      .from(services)
+      .orderBy(asc(services.displayOrder), asc(services.id));
+  } catch (error) {
+    return SEED_SERVICES.map((s, idx) => ({
+      ...s,
+      id: idx + 1,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })) as Service[];
+  }
 }
 
 export function serializeService(s: Service) {
@@ -641,9 +726,19 @@ export function serializeService(s: Service) {
 export type ServiceDTO = ReturnType<typeof serializeService>;
 
 export async function getSettings(): Promise<Settings | null> {
-  await ensureSeeded();
-  const rows = await db.select().from(settings).limit(1);
-  return rows[0] ?? null;
+  try {
+    await ensureSeeded();
+    const rows = await db.select().from(settings).limit(1);
+    return rows[0] ?? null;
+  } catch (error) {
+    return {
+      id: 1,
+      siteTitle: "Nitesh Kuamr — Video Editor & Motion Graphic Designer",
+      siteDescription: "Portfolio of Nitesh Kuamr",
+      createdAt: new Date(),
+      updatedAt: new Date()
+    } as Settings;
+  }
 }
 
 export function serializeSettings(s: Settings) {
